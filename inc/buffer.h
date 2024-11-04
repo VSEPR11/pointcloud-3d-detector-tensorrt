@@ -15,59 +15,100 @@
 #include <cuda_runtime_api.h>
 
 namespace PointDetection {
-class BufferPair {
+
+class BufferManager {
  public:
-    BufferPair(const nvinfer1::Dims &dims, const nvinfer1::DataType &type, bool is_output = true) : is_output_(
-            is_output) {
-        bytes = Volume(dims) * SizeOf(type);
-        assert(bytes);
-        if (is_output) {
-            host_ = malloc(bytes);
+    explicit BufferManager(nvinfer1::IExecutionContext &context, int batch_size = 1) {
+        auto &engine = context.getEngine();
+        for (int i = 0; i < engine.getNbIOTensors(); ++i) {
+            auto tensor_name = engine.getIOTensorName(i);
+            bool is_output = engine.getTensorIOMode(tensor_name) != nvinfer1::TensorIOMode::kINPUT;
+            auto type = engine.getTensorDataType(tensor_name);
+            auto dims = context.getTensorShape(tensor_name);
+            if (dims.d[0] == -1) {
+                fprintf(stderr, "dims[0] == -1, please call context.setBindingDimensions\n");
+                dims.d[0] = batch_size;
+            }
+            size_t size = SizeOf(type) * Volume(dims);
+            if (!is_output)
+            {
+
+                void* deviceMem;
+                cudaMalloc(&deviceMem, size);
+                devicePtrs.push_back(deviceMem);
+                context.setTensorAddress(tensor_name, devicePtrs.back());
+                inputSizes.push_back(size);
+            }
+            else
+            {
+                void* hostMem;
+                cudaHostAlloc(&hostMem, size, 0);
+                hostPtrs.push_back(hostMem);
+                context.setTensorAddress(tensor_name, hostPtrs.back());
+                outputSizes.push_back(size);
+                void* output;
+                cudaMalloc(&output, size);
+                outputs.push_back(output);
+            }
         }
-        cudaMalloc(&device_, bytes);
     }
 
-    inline void ToDevice(const cudaStream_t &stream) const {
-        cudaMemcpyAsync(device_, host_, bytes, cudaMemcpyHostToDevice, stream);
-    }
-
-    inline void ToHost(const cudaStream_t &stream) const {
-        cudaMemcpyAsync(host_, device_, bytes, cudaMemcpyDeviceToHost, stream);
-    }
-
-    inline auto &host() {
-        return host_;
-    }
-
-    inline auto &device() {
-        return device_;
-    }
-
-    ~BufferPair() {
-        if (is_output_) {
-            free(host_);
+    void ToDevice(const cudaStream_t &stream) {
+        for (int i = 0; i < devicePtrs.size(); i++)
+        {
+            cudaMemcpyAsync(devicePtrs[i], inputs[i], inputSizes[i], cudaMemcpyHostToDevice, stream);
         }
-        cudaFree(device_);
     }
 
-    BufferPair(const BufferPair &) = delete;
+    void ToHost(const cudaStream_t &stream) {
+        for (int i = 0; i < outputSizes.size(); i++)
+        {
+            cudaMemcpyAsync(outputs[i], hostPtrs[i], outputSizes[i], cudaMemcpyDeviceToHost, stream);
+        }
+    }
 
-    BufferPair &operator=(BufferPair &) = delete;
+    template<class T, int N>
+    inline const typeof(T[N]) *ReadOutput(int index) {
+        return reinterpret_cast<typeof(T[N]) *>(outputs[index]);
+    }
 
+    inline void SetInputs(const std::vector<void *> &in_ptr) {
+        inputs = in_ptr;
+    }
+
+    inline auto *IO() {
+        return bindings.data();
+    }
+
+    ~BufferManager()
+    {
+        for (auto ptr: devicePtrs)
+        {
+            cudaFree(ptr);
+        }
+        for (auto ptr: hostPtrs)
+        {
+            cudaFree(ptr);
+        }
+        for (auto ptr: outputs)
+        {
+            cudaFree(ptr);
+        }
+    }
 
  private:
     static int SizeOf(const nvinfer1::DataType &type) {
         switch (type) {
-            case nvinfer1::DataType::kINT32:
-            case nvinfer1::DataType::kFLOAT:
-                return 4;
-            case nvinfer1::DataType::kHALF:
-                return 2;
-            case nvinfer1::DataType::kBOOL:
-            case nvinfer1::DataType::kINT8:
-                return 1;
-            default:
-                assert(false);
+        case nvinfer1::DataType::kINT32:
+        case nvinfer1::DataType::kFLOAT:
+            return 4;
+        case nvinfer1::DataType::kHALF:
+            return 2;
+        case nvinfer1::DataType::kBOOL:
+        case nvinfer1::DataType::kINT8:
+            return 1;
+        default:
+            assert(false);
         }
     }
 
@@ -79,76 +120,14 @@ class BufferPair {
         return size;
     }
 
-    int bytes{0};
-    void *device_{nullptr};
-    void *host_{nullptr};
-    bool is_output_{false};
-};
-
-class BufferManager {
- public:
-    explicit BufferManager(const std::unique_ptr<nvinfer1::ICudaEngine> &engine, int batch_size) {
-        for (int i = 0; i < engine->getNbBindings(); ++i) {
-            bool is_output = not engine->bindingIsInput(i);
-            auto type = engine->getBindingDataType(i);
-            auto dims = engine->getBindingDimensions(i);
-            if (dims.d[0] == -1) {
-                dims.d[0] = batch_size;
-            }
-            auto buffer = std::make_unique<BufferPair>(dims, type, is_output);
-            bindings.emplace_back(buffer->device());
-            (is_output ? outputs : inputs).emplace_back(std::move(buffer));
-        }
-    }
-
-    explicit BufferManager(const nvinfer1::IExecutionContext &context, int batch_size = 1) {
-        auto &engine = context.getEngine();
-        for (int i = 0; i < engine.getNbBindings(); ++i) {
-            bool is_output = not engine.bindingIsInput(i);
-            auto type = engine.getBindingDataType(i);
-            auto dims = context.getBindingDimensions(i);
-            if (dims.d[0] == -1) {
-                fprintf(stderr, "dims[0] == -1, please call context.setBindingDimensions\n");
-                dims.d[0] = batch_size;
-            }
-            auto buffer = std::make_unique<BufferPair>(dims, type, is_output);
-            bindings.emplace_back(buffer->device());
-            (is_output ? outputs : inputs).emplace_back(std::move(buffer));
-        }
-    }
-
-    void ToDevice(const cudaStream_t &stream) {
-        for (auto &input: inputs) {
-            input->ToDevice(stream);
-        }
-    }
-
-    void ToHost(const cudaStream_t &stream) {
-        for (auto &output: outputs) {
-            output->ToHost(stream);
-        }
-    }
-
-    template<class T, int N>
-    inline const typeof(T[N]) *ReadOutput(int index) {
-        return reinterpret_cast<typeof(T[N]) *>(outputs[index]->host());
-    }
-
-    inline void SetInputs(const std::vector<void *> &in_ptr) {
-        for (int i = 0; i < in_ptr.size(); ++i) {
-            inputs[i]->host() = in_ptr[i];
-        }
-    }
-
-    inline auto *IO() {
-        return bindings.data();
-    }
-
-
- private:
-    std::vector<std::unique_ptr<BufferPair>> inputs;
-    std::vector<std::unique_ptr<BufferPair>> outputs;
+    std::vector<void*> devicePtrs;
+    std::vector<void*> hostPtrs;
+    std::vector<size_t> inputSizes;
+    std::vector<size_t> outputSizes;
     std::vector<void *> bindings;
+
+    std::vector<void*> inputs;
+    std::vector<void*> outputs;
 };
 
 }  // namespace PointDetection

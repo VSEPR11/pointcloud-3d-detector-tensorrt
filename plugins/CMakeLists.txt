@@ -7,9 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(OUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 set(CMAKE_CXX_FLAGS "-Wno-deprecated-declarations ${CMAKE_CXX_FLAGS} -DBUILD_SYSTEM=cmake_oss")
+
 IF (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING
-        "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
+            "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
 ENDIF ()
 add_definitions(-DPROJECT_ROOT="${PROJECT_SOURCE_DIR}")
 if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
@@ -33,17 +34,17 @@ find_package(CUDA ${CUDA_VERSION} REQUIRED)
 find_library(CUDART_LIB cudart_static HINTS ${CUDA_TOOLKIT_ROOT_DIR} PATH_SUFFIXES lib lib/x64 lib64)
 find_library(CUBLAS_LIB cublas REQUIRED PATH_SUFFIXES lib64 lib lib/x64 lib/stubs)
 find_library(CUDNN_LIB cudnn REQUIRED
-    HINTS ${CUDNN_DIR} $ENV{CUDNN_DIR}
-    PATH_SUFFIXES lib64 lib/x64 lib)
+        HINTS ${CUDNN_DIR} $ENV{CUDNN_DIR}
+        PATH_SUFFIXES lib64 lib/x64 lib)
 find_library(TENSORRT_INFER_LIB nvinfer
-    HINTS ${TENSORRT_DIR} $ENV{TENSORRT_DIR}
-    PATH_SUFFIXES lib lib64 lib/x64)
+        HINTS ${TENSORRT_DIR} $ENV{TENSORRT_DIR}
+        PATH_SUFFIXES lib lib64 lib/x64)
 find_path(TENSORRT_INCLUDE_DIR NvInfer.h
-    HINTS ${TENSORRT_DIR} ${CUDA_TOOLKIT_ROOT_DIR}
-    PATH_SUFFIXES include)
+        HINTS ${TENSORRT_DIR} ${CUDA_TOOLKIT_ROOT_DIR}
+        PATH_SUFFIXES include)
 set(TENSORRT_LIB ${TENSORRT_INFER_LIB})
 find_library(CUBLASLT_LIB cublasLt HINTS
-    ${CUDA_TOOLKIT_ROOT_DIR} PATH_SUFFIXES lib64 lib lib/x64 lib/stubs)
+        ${CUDA_TOOLKIT_ROOT_DIR} PATH_SUFFIXES lib64 lib lib/x64 lib/stubs)
 
 ############################################################################################
 ## targets

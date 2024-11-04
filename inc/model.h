@@ -92,7 +92,7 @@ class TRTDetector3D {
     auto operator()(const std::vector<void *> &inputs) {
         buffers_->SetInputs(inputs);
         buffers_->ToDevice(stream_);
-        context_->enqueueV2(buffers_->IO(), stream_, nullptr);
+        context_->enqueueV3(stream_);
         buffers_->ToHost(stream_);
         cudaStreamSynchronize(stream_);
 

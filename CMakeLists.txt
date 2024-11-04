@@ -13,7 +13,7 @@ set_ifndef_from_default(CMAKE_BUILD_TYPE Release)
 ########################################################################################################################
 # Dependencies
 ########################################################################################################################
-find_package(catkin REQUIRED COMPONENTS roscpp sensor_msgs visualization_msgs pcl_conversions QUIET)
+#find_package(catkin REQUIRED COMPONENTS roscpp sensor_msgs visualization_msgs pcl_conversions QUIET)
 find_package(PCL REQUIRED COMPONENTS filters QUIET)
 find_package(yaml-cpp REQUIRED QUIET)
 find_package(Boost REQUIRED COMPONENTS filesystem QUIET)
